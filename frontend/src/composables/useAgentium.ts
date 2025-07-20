@@ -2,7 +2,7 @@ import { ref, watch, onMounted } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useWebSocket } from './useWebSocket'
 import type { ChatMessage, WebSocketMessage } from '@/types'
-import { generateSessionId } from '@/lib/utils'
+import { generateSessionId, getApiUrl } from '@/lib/utils'
 
 export function useAgentium() {
   const store = useAppStore()
@@ -246,7 +246,7 @@ export function useAgentium() {
   // Health check
   const checkHealth = async () => {
     try {
-      const response = await fetch('/api/health')
+      const response = await fetch(getApiUrl('/health'))
       const health = await response.json()
       
       store.updateSystemHealth({

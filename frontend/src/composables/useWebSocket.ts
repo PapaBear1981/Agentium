@@ -217,6 +217,10 @@ export function useWebSocket(sessionId?: string) {
         // Respond to heartbeat
         sendMessage('heartbeat' as WebSocketMessageType, { timestamp: Date.now() })
         break
+      case 'connection_status':
+        // Handle connection status updates
+        console.log('Connection status:', message.data)
+        break
       default:
         console.log('Unknown message type:', message.type)
     }
