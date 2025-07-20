@@ -136,8 +136,8 @@ class SimpleAgentOrchestrator:
         """Call OpenRouter API."""
         model_map = {
             "gpt4o_agent": "openai/gpt-4o",
-            "gemini_agent": "google/gemini-2.0-flash-exp:free",
-            "primary_agent": "openai/gpt-4o-mini"
+            "gemini_agent": "google/gemini-2.5-flash-lite-preview-06-17",
+            "primary_agent": "google/gemini-2.5-flash-lite-preview-06-17"
         }
         
         model = model_map.get(agent_id, "openai/gpt-4o-mini")

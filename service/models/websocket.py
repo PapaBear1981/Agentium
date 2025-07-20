@@ -39,6 +39,12 @@ class WebSocketMessage(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     session_id: Optional[str] = None
     message_id: Optional[str] = None
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat(),
+            Decimal: lambda v: float(v)
+        }
 
 # Client to Server Messages
 class VoiceInputData(BaseModel):

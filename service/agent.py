@@ -188,7 +188,7 @@ class JarvisAgent(RoutedAgent):
             result = AgentResult(
                 task_id=message.task_id,
                 agent_id=self.config.id,
-                result=model_result.content,
+                result=model_result.content or "I am here to help.", # Fallback for empty responses
                 success=True,
                 tokens_used=getattr(model_result, 'usage', {}).get('total_tokens', 0),
                 processing_time_ms=processing_time,
@@ -366,19 +366,22 @@ class ManagerAgent(RoutedAgent):
     
     async def _select_agent(self, message: UserTask) -> JarvisAgent:
         """Select the most appropriate agent for the task."""
-        # Simple selection logic - can be enhanced with ML-based routing
         content_lower = message.content.lower()
-        
-        # Check for specific keywords to route to specialized agents
-        if any(keyword in content_lower for keyword in ["code", "program", "script", "debug"]):
-            return self.agents.get("agent1_openrouter_gpt40", list(self.agents.values())[0])
-        elif any(keyword in content_lower for keyword in ["search", "find", "lookup", "research"]):
-            return self.agents.get("agent3_openrouter_gemini25", list(self.agents.values())[0])
-        elif any(keyword in content_lower for keyword in ["analyze", "data", "calculate"]):
-            return self.agents.get("agent2_ollama_gemma3_7b", list(self.agents.values())[0])
-        else:
-            # Default to the first available agent
-            return list(self.agents.values())[0]
+
+        # Define agent routing rules
+        routing_rules = {
+            "agent1_openrouter_gpt40": ["code", "program", "script", "debug"],
+            "agent3_openrouter_gemini25": ["search", "find", "lookup", "research"],
+            "agent2_ollama_gemma3_7b": ["analyze", "data", "calculate"],
+        }
+
+        # Find the best agent based on keywords
+        for agent_id, keywords in routing_rules.items():
+            if any(keyword in content_lower for keyword in keywords):
+                return self.agents.get(agent_id)
+
+        # Default to a general-purpose agent if no specific keywords are matched
+        return self.agents.get("primary_agent") or list(self.agents.values())[0]
     
     @message_handler
     async def handle_voice_request(self, message: VoiceProcessingRequest, ctx: MessageContext) -> Dict[str, Any]:

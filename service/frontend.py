@@ -129,10 +129,20 @@ class JarvisWebSocketHandler:
         
     async def handle_message(self, session_id: str, message_data: Dict, connection_manager: ConnectionManager):
         """Handle incoming WebSocket message."""
+        # File-based debug at the very start
+        with open("/app/debug.log", "a") as f:
+            f.write(f"[DEBUG] handle_message called: session_id={session_id}, message_data={message_data}\n")
+            f.flush()
+        
         try:
             message_type = message_data.get("type")
             data = message_data.get("data", {})
             
+            with open("/app/debug.log", "a") as f:
+                f.write(f"[DEBUG] Parsed: type={message_type}, data={data}\n")
+                f.flush()
+            
+            print(f"[DEBUG] WebSocket message received: type={message_type}, data={data}")
             logger.info("Processing WebSocket message",
                        session_id=session_id,
                        message_type=message_type)
@@ -149,16 +159,25 @@ class JarvisWebSocketHandler:
             
             session_state = self.session_states[session_id]
             
+            logger.debug("Received WebSocket message for processing",
+                         session_id=session_id,
+                         message_type=message_type,
+                         message_data=message_data)
+            
             if message_type == WebSocketMessageType.VOICE_INPUT:
+                logger.info("Handling voice input", session_id=session_id)
                 await self._handle_voice_input(session_id, data, connection_manager, session_state)
             elif message_type == WebSocketMessageType.TEXT_INPUT:
+                logger.info("Handling text input", session_id=session_id)
                 await self._handle_text_input(session_id, data, connection_manager, session_state)
             elif message_type == WebSocketMessageType.SYSTEM_COMMAND:
+                logger.info("Handling system command", session_id=session_id)
                 await self._handle_system_command(session_id, data, connection_manager, session_state)
             elif message_type == WebSocketMessageType.HEARTBEAT:
+                logger.info("Handling heartbeat", session_id=session_id)
                 await self._handle_heartbeat(session_id, data, connection_manager)
             else:
-                logger.warning("Unknown message type", message_type=message_type)
+                logger.warning("Unknown message type received", message_type=message_type, session_id=session_id)
                 error_msg = create_error_message(
                     error_code="UNKNOWN_MESSAGE_TYPE",
                     error_message=f"Unknown message type: {message_type}",
@@ -167,8 +186,8 @@ class JarvisWebSocketHandler:
                 await connection_manager.send_message(session_id, error_msg)
                 
         except Exception as e:
-            logger.error("Error handling WebSocket message", 
-                        session_id=session_id, error=str(e))
+            logger.error("Error handling WebSocket message",
+                        session_id=session_id, error=str(e), exc_info=True)
             error_msg = create_error_message(
                 error_code="MESSAGE_PROCESSING_ERROR",
                 error_message=f"Failed to process message: {str(e)}",
@@ -179,6 +198,7 @@ class JarvisWebSocketHandler:
     async def _handle_voice_input(self, session_id: str, data: Dict, connection_manager: ConnectionManager, session_state: Dict):
         """Handle voice input message."""
         try:
+            logger.debug("Initiating STT request to voice service", session_id=session_id)
             # First, convert speech to text
             stt_response = await self.http_client.post(
                 f"{self.voice_service_url}/stt",
@@ -191,6 +211,7 @@ class JarvisWebSocketHandler:
             )
             stt_response.raise_for_status()
             stt_result = stt_response.json()
+            logger.debug("STT response received", session_id=session_id, stt_result=stt_result)
             
             if not stt_result.get("success"):
                 raise Exception(f"STT failed: {stt_result.get('error', 'Unknown error')}")
@@ -206,7 +227,7 @@ class JarvisWebSocketHandler:
             await self._process_text_with_agent(session_id, text, connection_manager, session_state, is_voice=True)
             
         except Exception as e:
-            logger.error("Voice input processing failed", session_id=session_id, error=str(e))
+            logger.error("Voice input processing failed", session_id=session_id, error=str(e), exc_info=True)
             error_msg = create_error_message(
                 error_code="VOICE_PROCESSING_ERROR",
                 error_message=f"Voice processing failed: {str(e)}",
@@ -216,18 +237,29 @@ class JarvisWebSocketHandler:
     
     async def _handle_text_input(self, session_id: str, data: Dict, connection_manager: ConnectionManager, session_state: Dict):
         """Handle text input message."""
+        print(f"[DEBUG] Processing text input for session {session_id}: {data}")
+        logger.info("Processing text input", session_id=session_id, data=data)
+        
         try:
             message = data.get("message", "").strip()
             if not message:
+                logger.warning("Empty text message received", session_id=session_id)
                 return
             
             context = data.get("context", {})
-            agent_preference = data.get("agent_preference")
+            # agent_preference = data.get("agent_preference") # Not used
             
+            # File-based debug for text input handler
+            with open("/app/debug.log", "a") as f:
+                f.write(f"[DEBUG] Text input handler - message: '{message}'\n")
+                f.write(f"[DEBUG] About to call _process_text_with_agent\n")
+                f.flush()
+            
+            logger.debug("Calling _process_text_with_agent for text input", session_id=session_id, message=message)
             await self._process_text_with_agent(session_id, message, connection_manager, session_state, context=context)
             
         except Exception as e:
-            logger.error("Text input processing failed", session_id=session_id, error=str(e))
+            logger.error("Text input processing failed", session_id=session_id, error=str(e), exc_info=True)
             error_msg = create_error_message(
                 error_code="TEXT_PROCESSING_ERROR",
                 error_message=f"Text processing failed: {str(e)}",
@@ -235,11 +267,21 @@ class JarvisWebSocketHandler:
             )
             await connection_manager.send_message(session_id, error_msg)
     
-    async def _process_text_with_agent(self, session_id: str, text: str, connection_manager: ConnectionManager, 
+    async def _process_text_with_agent(self, session_id: str, text: str, connection_manager: ConnectionManager,
                                      session_state: Dict, context: Optional[Dict] = None, is_voice: bool = False):
         """Process text through the agent system."""
         try:
-            # Send to agent service
+            # File-based debug for agent service call
+            with open("/app/debug.log", "a") as f:
+                f.write(f"[DEBUG] Sending to agent service: {self.agent_service_url}\n")
+                f.write(f"[DEBUG] Text: {text}\n")
+                f.flush()
+            
+            logger.info("Sending text to agent service",
+                        session_id=session_id,
+                        agent_service_url=self.agent_service_url,
+                        content_length=len(text))
+            
             agent_response = await self.http_client.post(
                 f"{self.agent_service_url}/tasks/process",
                 json={
@@ -251,24 +293,42 @@ class JarvisWebSocketHandler:
             )
             agent_response.raise_for_status()
             agent_result = agent_response.json()
+            logger.info("Received response from agent service",
+                        session_id=session_id,
+                        agent_result_success=agent_result.get("success"),
+                        agent_id=agent_result.get("agent_id"),
+                        agent_content_length=len(str(agent_result.get('content', ''))))
             
             # Update session state
             session_state["total_cost"] += agent_result.get("cost", 0.0)
             session_state["current_agent"] = agent_result.get("agent_id")
             session_state["message_history"].append({
                 "user_message": text,
-                "agent_response": agent_result.get("result"),
+                "agent_response": agent_result.get("content"),
                 "timestamp": time.time(),
                 "is_voice": is_voice
             })
             
-            # Prepare response message
-            response_text = agent_result.get("result", "")
+            # Log the full agent response content for debugging
+            # File-based debug logging
+            with open("/app/debug.log", "a") as f:
+                f.write(f"[DEBUG] Full agent response: {agent_result}\n")
+                f.flush()
+            
+            response_text = agent_result.get("content", "No content from agent.")
+            # Temporary debug: let's hardcode a message to see if it works
+            if not response_text.strip():
+                response_text = "HARDCODED: Agent response was empty, but this proves WebSocket works!"
+            
+            with open("/app/debug.log", "a") as f:
+                f.write(f"[DEBUG] Extracted response text: '{response_text}' (length: {len(response_text)})\n")
+                f.flush()
             
             # Convert to speech if this was a voice input
             audio_data = None
             if is_voice and session_state.get("voice_enabled", True):
                 try:
+                    logger.debug("Initiating TTS request to voice service", session_id=session_id)
                     tts_response = await self.http_client.post(
                         f"{self.voice_service_url}/tts",
                         json={
@@ -280,21 +340,29 @@ class JarvisWebSocketHandler:
                     )
                     tts_response.raise_for_status()
                     tts_result = tts_response.json()
+                    logger.debug("TTS response received", session_id=session_id, tts_result=tts_result)
                     
                     if tts_result.get("success"):
                         audio_data = tts_result.get("audio_data")
                     
                 except Exception as e:
-                    logger.warning("TTS failed", session_id=session_id, error=str(e))
+                    logger.warning("TTS failed", session_id=session_id, error=str(e), exc_info=True)
+            
+            logger.info("Sending agent response message to frontend",
+                        session_id=session_id,
+                        agent_id=agent_result.get("agent_id", "unknown"),
+                        message_type="agent_response",
+                        message_length=len(response_text))
             
             # Send agent response
+            from decimal import Decimal
             agent_msg = create_agent_response_message(
                 agent_id=agent_result.get("agent_id", "unknown"),
                 agent_name=agent_result.get("agent_id", "Unknown Agent"),
-                message=response_text,
+                message=response_text, # Use the actual response text now
                 model=agent_result.get("metadata", {}).get("model", "unknown"),
                 tokens_used=agent_result.get("tokens_used", 0),
-                cost=agent_result.get("cost", 0.0),
+                cost=Decimal(str(agent_result.get("cost", 0.0))),
                 audio=audio_data,
                 session_id=session_id
             )
@@ -303,17 +371,26 @@ class JarvisWebSocketHandler:
             # Send cost update
             cost_msg = CostUpdateMessage(
                 data={
-                    "session_cost": session_state["total_cost"],
-                    "last_operation_cost": agent_result.get("cost", 0.0),
-                    "budget_remaining": 100.0 - session_state["total_cost"],  # Assuming $100 budget
-                    "budget_limit": 100.0
+                    "session_cost": Decimal(str(session_state["total_cost"])),
+                    "last_operation_cost": Decimal(str(agent_result.get("cost", 0.0))),
+                    "budget_remaining": Decimal(str(100.0 - session_state["total_cost"])),  # Assuming $100 budget
+                    "budget_limit": Decimal(str(100.0))
                 },
                 session_id=session_id
             )
             await connection_manager.send_message(session_id, cost_msg)
             
+        except httpx.HTTPStatusError as e:
+            logger.error("HTTP error during agent processing", session_id=session_id, error=str(e),
+                        request=e.request.url, response_status=e.response.status_code, response_text=e.response.text, exc_info=True)
+            error_msg = create_error_message(
+                error_code="AGENT_SERVICE_HTTP_ERROR",
+                error_message=f"Agent service communication failed: {e.response.status_code} - {e.response.text}",
+                session_id=session_id
+            )
+            await connection_manager.send_message(session_id, error_msg)
         except Exception as e:
-            logger.error("Agent processing failed", session_id=session_id, error=str(e))
+            logger.error("Agent processing failed (general exception)", session_id=session_id, error=str(e), exc_info=True)
             error_msg = create_error_message(
                 error_code="AGENT_PROCESSING_ERROR",
                 error_message=f"Agent processing failed: {str(e)}",
@@ -325,13 +402,16 @@ class JarvisWebSocketHandler:
         """Handle system command message."""
         command = data.get("command")
         parameters = data.get("parameters", {})
+        logger.info("Received system command", session_id=session_id, command=command, parameters=parameters)
         
         if command == "status":
             # Get system status
             try:
+                logger.debug("Requesting system status from agent service", agent_service_url=self.agent_service_url)
                 status_response = await self.http_client.get(f"{self.agent_service_url}/status")
                 status_response.raise_for_status()
                 status_data = status_response.json()
+                logger.debug("System status response received", status_data=status_data)
                 
                 # Handle agents list (current format) or dict (legacy format)
                 agents_data = status_data.get("agents", [])
@@ -348,17 +428,32 @@ class JarvisWebSocketHandler:
                     session_id=session_id
                 )
                 await connection_manager.send_message(session_id, status_msg)
+                logger.info("System status sent to frontend", session_id=session_id)
                 
             except Exception as e:
-                logger.error("Failed to get system status", error=str(e))
+                logger.error("Failed to get system status", error=str(e), exc_info=True)
+                error_msg = create_error_message(
+                    error_code="SYSTEM_STATUS_ERROR",
+                    error_message=f"Failed to get system status: {str(e)}",
+                    session_id=session_id
+                )
+                await connection_manager.send_message(session_id, error_msg)
         
         elif command == "pause":
             session_state["paused"] = True
             logger.info("Session paused", session_id=session_id)
+            system_status = create_system_status_message(
+                session_id=session_id, message="Session paused."
+            )
+            await connection_manager.send_message(session_id, system_status)
         
         elif command == "resume":
             session_state["paused"] = False
             logger.info("Session resumed", session_id=session_id)
+            system_status = create_system_status_message(
+                session_id=session_id, message="Session resumed."
+            )
+            await connection_manager.send_message(session_id, system_status)
         
         elif command == "reset":
             # Reset session state
@@ -371,50 +466,68 @@ class JarvisWebSocketHandler:
                 "current_agent": None
             })
             logger.info("Session reset", session_id=session_id)
+            system_status = create_system_status_message(
+                session_id=session_id, message="Session reset."
+            )
+            await connection_manager.send_message(session_id, system_status)
+        else:
+            logger.warning("Unknown system command recieved", session_id=session_id, command=command)
+            error_msg = create_error_message(
+                error_code="UNKNOWN_COMMAND",
+                error_message=f"Unknown system command: {command}",
+                session_id=session_id
+            )
+            await connection_manager.send_message(session_id, error_msg)
     
     async def _handle_heartbeat(self, session_id: str, data: Dict, connection_manager: ConnectionManager):
         """Handle heartbeat message."""
+        logger.debug("Received heartbeat", session_id=session_id, data=data)
         # Simply echo back the heartbeat
         heartbeat_msg = WebSocketMessage(
             type=WebSocketMessageType.HEARTBEAT,
-            data={"timestamp": time.time(), "server_time": time.time()},
+            data={"timestamp": time.time(), "server_time": time.time(), "echo": True},
             session_id=session_id
         )
         await connection_manager.send_message(session_id, heartbeat_msg)
+        logger.debug("Sent heartbeat echo", session_id=session_id)
     
     async def cleanup(self):
         """Cleanup resources."""
-        await self.http_client.aclose()
+        if self.http_client:
+            await self.http_client.aclose()
+            logger.info("HTTP client closed.")
 
 # Global instances
 connection_manager = ConnectionManager()
 websocket_handler: Optional[JarvisWebSocketHandler] = None
 
+# Environment configuration
+AGENT_SERVICE_URL = os.getenv("AGENT_SERVICE_URL", "http://localhost:8001")
+VOICE_SERVICE_URL = os.getenv("VOICE_SERVICE_URL", "http://localhost:8002")
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager."""
+    """FastAPI lifespan context manager."""
     global websocket_handler
     
-    logger.info("Starting Jarvis WebSocket Frontend")
-    
     # Initialize WebSocket handler
-    agent_service_url = os.getenv("AGENT_SERVICE_URL", "http://agent_service:8001")
-    voice_service_url = os.getenv("VOICE_SERVICE_URL", "http://voice_adapter:8002")
-    
-    websocket_handler = JarvisWebSocketHandler(agent_service_url, voice_service_url)
-    
-    logger.info("WebSocket handler initialized")
+    websocket_handler = JarvisWebSocketHandler(AGENT_SERVICE_URL, VOICE_SERVICE_URL)
+    logger.info("WebSocket handler initialized", 
+                agent_service_url=AGENT_SERVICE_URL,
+                voice_service_url=VOICE_SERVICE_URL)
     
     yield
     
-    logger.info("Shutting down Jarvis WebSocket Frontend")
+    # Cleanup
     if websocket_handler:
         await websocket_handler.cleanup()
+        logger.info("WebSocket handler cleaned up")
 
 # Create FastAPI app
 app = FastAPI(
     title="Jarvis WebSocket Frontend",
-    description="Real-time WebSocket communication for the Jarvis multi-agent AI system",
+    description="Real-time WebSocket communication for Jarvis Multi-Agent AI System",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -422,150 +535,79 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-@app.websocket("/ws/{session_id}")
-async def websocket_endpoint(websocket: WebSocket, session_id: str):
-    """Main WebSocket endpoint for real-time communication."""
-    await connection_manager.connect(websocket, session_id)
-
-    try:
-        # Send initial connection status
-        connection_msg = WebSocketMessage(
-            type=WebSocketMessageType.CONNECTION_STATUS,
-            data={
-                "status": "connected",
-                "session_id": session_id,
-                "server_version": "1.0.0"
-            },
-            session_id=session_id
-        )
-        await connection_manager.send_message(session_id, connection_msg)
-
-        while True:
-            # Receive message from client
-            data = await websocket.receive_text()
-            message_data = json.loads(data)
-
-            # Process message
-            if websocket_handler:
-                await websocket_handler.handle_message(session_id, message_data, connection_manager)
-
-    except WebSocketDisconnect:
-        logger.info("WebSocket disconnected normally", session_id=session_id)
-    except Exception as e:
-        logger.error("WebSocket error", session_id=session_id, error=str(e))
-    finally:
-        connection_manager.disconnect(session_id)
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
+        "service": "jarvis-websocket-frontend",
         "active_connections": connection_manager.get_connection_count(),
         "timestamp": time.time()
     }
 
-@app.get("/connections")
-async def get_connections():
-    """Get information about active connections."""
-    return {
-        "active_connections": connection_manager.get_connection_count(),
-        "sessions": {
-            session_id: {
-                "connected_at": session_data["connected_at"],
-                "message_count": session_data["message_count"],
-                "last_activity": session_data["last_activity"],
-                "duration_seconds": int(time.time() - session_data["connected_at"])
-            }
-            for session_id, session_data in connection_manager.session_data.items()
-        }
-    }
-
-@app.post("/broadcast")
-async def broadcast_message(message: Dict):
-    """Broadcast a message to all connected clients."""
+@app.websocket("/ws/{session_id}")
+async def websocket_endpoint(websocket: WebSocket, session_id: str):
+    """Main WebSocket endpoint for client connections."""
+    await connection_manager.connect(websocket, session_id)
+    logger.info("Client connected", session_id=session_id)
+    
+    # Send connection status message
     try:
-        ws_message = WebSocketMessage(
-            type=WebSocketMessageType.SYSTEM_STATUS,
-            data=message,
-            timestamp=time.time()
+        from models.websocket import ConnectionStatusMessage, ConnectionStatusData, WebSocketMessageType
+        connection_msg = ConnectionStatusMessage(
+            type=WebSocketMessageType.CONNECTION_STATUS,
+            data=ConnectionStatusData(
+                status="connected",
+                session_id=session_id,
+                client_count=connection_manager.get_connection_count(),
+                server_version="1.0.0"
+            ),
+            session_id=session_id
         )
-        await connection_manager.broadcast(ws_message)
-
-        return {
-            "success": True,
-            "message": "Message broadcasted",
-            "recipients": connection_manager.get_connection_count()
-        }
+        await connection_manager.send_message(session_id, connection_msg)
     except Exception as e:
-        logger.error("Broadcast failed", error=str(e))
-        raise HTTPException(status_code=500, detail=f"Broadcast failed: {e}")
-
-@app.get("/sessions/{session_id}")
-async def get_session_info(session_id: str):
-    """Get information about a specific session."""
-    session_info = connection_manager.get_session_info(session_id)
-
-    if not session_info:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    # Add session state if available
-    if websocket_handler and session_id in websocket_handler.session_states:
-        session_state = websocket_handler.session_states[session_id]
-        session_info.update({
-            "total_cost": session_state.get("total_cost", 0.0),
-            "message_history_count": len(session_state.get("message_history", [])),
-            "voice_enabled": session_state.get("voice_enabled", True),
-            "current_agent": session_state.get("current_agent")
-        })
-
-    return session_info
-
-@app.delete("/sessions/{session_id}")
-async def disconnect_session(session_id: str):
-    """Forcefully disconnect a session."""
-    if session_id in connection_manager.active_connections:
-        websocket = connection_manager.active_connections[session_id]
-        await websocket.close()
+        logger.error("Failed to send connection status", session_id=session_id, error=str(e))
+    
+    try:
+        while True:
+            # Receive message from client
+            data = await websocket.receive_text()
+            print(f"[DEBUG] Received WebSocket data: {data}")
+            message_data = json.loads(data)
+            print(f"[DEBUG] Parsed message data: {message_data}")
+            
+            # File-based debug for WebSocket endpoint
+            with open("/app/debug.log", "a") as f:
+                f.write(f"[DEBUG] WebSocket endpoint received: {message_data}\n")
+                f.write(f"[DEBUG] websocket_handler is: {websocket_handler}\n")
+                f.flush()
+            
+            # Handle the message
+            if websocket_handler:
+                print(f"[DEBUG] Calling websocket_handler.handle_message")
+                with open("/app/debug.log", "a") as f:
+                    f.write(f"[DEBUG] About to call handle_message\n")
+                    f.flush()
+                await websocket_handler.handle_message(session_id, message_data, connection_manager)
+            else:
+                print(f"[DEBUG] WebSocket handler not initialized!")
+                with open("/app/debug.log", "a") as f:
+                    f.write(f"[DEBUG] WebSocket handler is None!\n")
+                    f.flush()
+                logger.error("WebSocket handler not initialized")
+                
+    except WebSocketDisconnect:
         connection_manager.disconnect(session_id)
-
-        return {"success": True, "message": f"Session {session_id} disconnected"}
-    else:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-@app.get("/")
-async def root():
-    """Root endpoint with API information."""
-    return {
-        "service": "Jarvis WebSocket Frontend",
-        "version": "1.0.0",
-        "description": "Real-time WebSocket communication for the Jarvis multi-agent AI system",
-        "endpoints": {
-            "websocket": "/ws/{session_id}",
-            "health": "/health",
-            "connections": "/connections",
-            "broadcast": "/broadcast",
-            "sessions": "/sessions/{session_id}"
-        },
-        "active_connections": connection_manager.get_connection_count(),
-        "timestamp": time.time()
-    }
-
-# Error handlers
-@app.exception_handler(Exception)
-async def general_exception_handler(request, exc):
-    """Handle general exceptions."""
-    logger.error("Unexpected error", error=str(exc))
-    return JSONResponse(
-        status_code=500,
-        content={"error": "Internal server error", "detail": "An unexpected error occurred"}
-    )
+        logger.info("Client disconnected", session_id=session_id)
+    except Exception as e:
+        logger.error("WebSocket error", session_id=session_id, error=str(e))
+        connection_manager.disconnect(session_id)
 
 if __name__ == "__main__":
     import uvicorn

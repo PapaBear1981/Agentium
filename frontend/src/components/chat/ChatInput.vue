@@ -27,6 +27,7 @@
       <!-- Text Input -->
       <div class="flex-1 relative">
         <textarea
+          id="chat-input"
           ref="textareaRef"
           v-model="inputText"
           :placeholder="placeholder"

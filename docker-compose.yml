@@ -74,6 +74,8 @@ services:
     build:
       context: .
       dockerfile: service/Dockerfile.agent
+      args:
+        - "FORCE_REBUILD=true"
     container_name: jarvis_agent_service
     environment:
       DATABASE_URL: postgresql://jarvis_user:${POSTGRES_PASSWORD:-jarvis_password}@postgres:5432/jarvis
@@ -110,6 +112,8 @@ services:
     build:
       context: .
       dockerfile: service/Dockerfile.fastapi
+      args:
+        - "FORCE_REBUILD=true"
     container_name: jarvis_fastapi_ws
     ports:
       - "8000:8000"
@@ -117,6 +121,7 @@ services:
       DATABASE_URL: postgresql://jarvis_user:${POSTGRES_PASSWORD:-jarvis_password}@postgres:5432/jarvis
       QDRANT_URL: http://qdrant:6333
       AGENT_SERVICE_URL: http://agent_service:8001
+      VOICE_SERVICE_URL: http://voice_adapter:8002
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
