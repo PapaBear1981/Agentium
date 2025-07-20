@@ -16,6 +16,7 @@ export enum WebSocketMessageType {
   // Server to Client
   AGENT_RESPONSE = 'agent_response',
   AGENT_RESPONSE_STREAM = 'agent_response_stream',
+  AGENT_RESPONSE_COMPLETE = 'agent_response_complete',
   TOOL_EXECUTION = 'tool_execution',
   SYSTEM_STATUS = 'system_status',
   COST_UPDATE = 'cost_update',

@@ -4,17 +4,18 @@ import { useWebSocket } from './useWebSocket'
 import type { ChatMessage, WebSocketMessage } from '@/types'
 import { generateSessionId, getApiUrl } from '@/lib/utils'
 
-export function useAgentium() {
+// Create a single, shared instance of the agent logic.
+const createAgentiumInstance = () => {
   const store = useAppStore()
-  const { 
-    connect, 
-    disconnect, 
-    sendTextMessage, 
-    sendVoiceMessage, 
+  const {
+    connect,
+    disconnect,
+    sendTextMessage,
+    sendVoiceMessage,
     sendSystemCommand,
     setCallbacks,
     state: wsState,
-    isConnected 
+    isConnected
   } = useWebSocket(store.sessionId || generateSessionId())
 
   const isInitialized = ref(false)
@@ -42,26 +43,40 @@ export function useAgentium() {
       },
 
       onAgentResponse: (data: any) => {
+        console.log('[Agentium] Processing agent response:', data)
+        
+        // Parse cost value (handle string/Decimal from backend)
+        const parseCost = (value: any): number => {
+          if (typeof value === 'number') return value
+          if (typeof value === 'string') {
+            const parsed = parseFloat(value)
+            return isNaN(parsed) ? 0 : parsed
+          }
+          return 0
+        }
+
         const message: ChatMessage = {
           id: crypto.randomUUID(),
           type: 'agent',
-          content: data.message,
+          content: data.message || data.content || 'No response received', // Backend sends 'message' field
           timestamp: new Date(),
-          agentId: data.agent_id,
+          agentId: data.agent_id || 'unknown',
           agentName: getAgentName(data.agent_id),
-          cost: data.metadata?.cost || 0,
-          tokens: data.metadata?.tokens_used || 0,
-          processingTime: data.metadata?.processing_time_ms || 0,
-          audioData: data.audio,
-          metadata: data.metadata
+          cost: parseCost(data.cost),
+          tokens: data.tokens_used || 0,
+          processingTime: data.processing_time_ms || 0,
+          audioData: data.audio || data.audio_data, // Handle both field names
+          metadata: data.metadata || {}
         }
 
+        console.log('[Agentium] Adding message to store:', message)
         store.addMessage(message)
         store.setTyping(false)
 
         // Update cost summary
-        if (data.metadata?.cost) {
-          const currentCost = store.costSummary.sessionCost + data.metadata.cost
+        const cost = parseCost(data.cost)
+        if (cost > 0) {
+          const currentCost = store.costSummary.sessionCost + cost
           store.updateCostSummary({
             sessionCost: currentCost,
             budgetRemaining: store.costSummary.budgetLimit - currentCost
@@ -69,15 +84,29 @@ export function useAgentium() {
         }
 
         // Play audio if available and auto-play is enabled
-        if (data.audio && store.userSettings.autoPlayTTS) {
-          playAudio(data.audio)
+        const audioData = data.audio || data.audio_data
+        if (audioData && store.userSettings.autoPlayTTS) {
+          playAudio(audioData)
         }
       },
 
       onCostUpdate: (data: any) => {
+        console.log('[Agentium] Processing cost update:', data)
+        
+        // Parse cost values (handle string/Decimal from backend)
+        const parseCost = (value: any): number => {
+          if (typeof value === 'number') return value
+          if (typeof value === 'string') {
+            const parsed = parseFloat(value)
+            return isNaN(parsed) ? 0 : parsed
+          }
+          return 0
+        }
+
         store.updateCostSummary({
-          sessionCost: data.session_cost,
-          budgetRemaining: data.budget_remaining,
+          sessionCost: parseCost(data.session_cost),
+          budgetRemaining: parseCost(data.budget_remaining),
+          budgetLimit: parseCost(data.budget_limit) || store.costSummary.budgetLimit,
           costBreakdown: data.cost_breakdown || {}
         })
 
@@ -88,18 +117,20 @@ export function useAgentium() {
       },
 
       onSystemStatus: (data: any) => {
+        console.log('[Agentium] Processing system status:', data)
+        
         store.updateSystemHealth({
-          overall: data.overall || 'healthy',
+          overall: data.system_health || data.overall || 'healthy',
           services: {
             websocket: true, // We're connected if we're receiving this
-            agents: data.agents_active > 0,
+            agents: (data.agents_active || 0) > 0,
             voice: data.voice_processing || false,
             database: true // Assume healthy if we're getting status
           }
         })
 
         // Update agents if provided
-        if (data.agents) {
+        if (data.agents && Array.isArray(data.agents)) {
           store.updateAgents(data.agents)
         }
       },
@@ -138,8 +169,11 @@ export function useAgentium() {
   // Send a text message to the agents
   const sendMessage = async (text: string, context?: any) => {
     if (!isConnected.value) {
+      console.error('[Agentium] Cannot send message: not connected to server')
       throw new Error('Not connected to server')
     }
+
+    console.log('[Agentium] Sending message:', text)
 
     // Add user message to chat immediately
     const userMessage: ChatMessage = {
@@ -152,18 +186,25 @@ export function useAgentium() {
     store.addMessage(userMessage)
     store.setTyping(true)
 
-    // Send to server
-    const sent = sendTextMessage(text, {
-      ...context,
+    // Prepare context with proper format for backend
+    const messageContext = {
       preferred_agent: store.currentAgent,
-      user_settings: store.userSettings
-    })
+      user_settings: store.userSettings,
+      ...context
+    }
+
+    console.log('[Agentium] Sending with context:', messageContext)
+
+    // Send to server
+    const sent = sendTextMessage(text, messageContext)
 
     if (!sent) {
+      console.error('[Agentium] Failed to send message to server')
       store.setTyping(false)
       throw new Error('Failed to send message')
     }
 
+    console.log('[Agentium] Message sent successfully')
     return sent
   }
 
@@ -311,4 +352,13 @@ export function useAgentium() {
     // Utilities
     sessionId: wsState.sessionId
   }
+}
+
+let agentiumInstance: ReturnType<typeof createAgentiumInstance> | null = null
+
+export function useAgentium() {
+  if (!agentiumInstance) {
+    agentiumInstance = createAgentiumInstance()
+  }
+  return agentiumInstance
 }
