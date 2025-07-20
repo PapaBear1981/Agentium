@@ -1,0 +1,42 @@
+# Voice Processing Service Requirements
+
+# Core dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+httpx==0.25.2
+
+# Audio processing
+librosa==0.10.1
+soundfile==0.12.1
+numpy==1.24.3
+scipy==1.11.4
+
+# Speech-to-Text
+whisperx==3.1.1
+faster-whisper>=1.0.0
+openai-whisper==20231117
+
+# Text-to-Speech
+TTS==0.22.0
+pyttsx3==2.90
+
+# Audio I/O
+pyaudio>=0.2.11
+
+# Machine Learning
+torch==2.1.1
+torchaudio==2.1.1
+
+# Utilities
+python-multipart==0.0.6
+python-dotenv==1.0.0
+asyncio-mqtt==0.16.1
+
+# Monitoring and logging
+structlog==23.2.0
+prometheus-client==0.19.0
+
+# Optional GPU support
+# torch==2.1.1+cu118 --index-url https://download.pytorch.org/whl/cu118
+# torchaudio==2.1.1+cu118 --index-url https://download.pytorch.org/whl/cu118

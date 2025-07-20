@@ -1,0 +1,63 @@
+# Voice Processing Service Dockerfile
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    ffmpeg \
+    git \
+    libsndfile1 \
+    libsndfile1-dev \
+    portaudio19-dev \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY service/requirements-voice.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements-voice.txt
+
+# Install additional voice processing libraries
+RUN pip install --no-cache-dir \
+    whisperx \
+    TTS \
+    librosa \
+    soundfile \
+    pyaudio \
+    httpx \
+    fastapi \
+    uvicorn[standard] \
+    pydantic \
+    numpy \
+    torch \
+    torchaudio
+
+# Copy application code
+COPY service/ .
+
+# Create necessary directories
+RUN mkdir -p /app/cache /app/logs /app/models
+
+# Set permissions
+RUN chmod +x /app/voice_service.py
+
+# Expose port
+EXPOSE 8002
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8002/health || exit 1
+
+# Run the voice service
+CMD ["python", "-m", "uvicorn", "voice_service:app", "--host", "0.0.0.0", "--port", "8002", "--reload"]

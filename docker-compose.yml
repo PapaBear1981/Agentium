@@ -1,0 +1,231 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: jarvis_postgres
+    environment:
+      POSTGRES_DB: jarvis
+      POSTGRES_USER: jarvis_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jarvis_password}
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./service/db_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jarvis_user -d jarvis"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - jarvis_network
+
+  # Qdrant vector database
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: jarvis_qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: 6333
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    # healthcheck:
+    #   test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:6333/"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 5
+    networks:
+      - jarvis_network
+
+  # Ollama for local LLM serving
+  ollama:
+    image: ollama/ollama:latest
+    container_name: jarvis_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      OLLAMA_HOST: 0.0.0.0
+    # healthcheck:
+    #   test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:11434/api/tags"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    networks:
+      - jarvis_network
+    # GPU support disabled for WSL compatibility
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # Agent service - AutoGen orchestration
+  agent_service:
+    build:
+      context: .
+      dockerfile: service/Dockerfile.agent
+    container_name: jarvis_agent_service
+    environment:
+      DATABASE_URL: postgresql://jarvis_user:${POSTGRES_PASSWORD:-jarvis_password}@postgres:5432/jarvis
+      QDRANT_URL: http://qdrant:6333
+      OLLAMA_URL: http://ollama:11434
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
+      STT_PROVIDER: ${STT_PROVIDER:-whisperx}
+      TTS_PROVIDER: ${TTS_PROVIDER:-coqui}
+      MAX_TURNS: ${MAX_TURNS:-15}
+      BUDGET_LIMIT: ${BUDGET_LIMIT:-100.00}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./data/docs:/app/data/docs
+      - ./logs:/app/logs
+      - agent_cache:/app/cache
+    ports:
+      - "8001:8001"
+    depends_on:
+      - postgres
+      - qdrant
+      - ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+    networks:
+      - jarvis_network
+    restart: unless-stopped
+
+  # FastAPI WebSocket server
+  fastapi_ws:
+    build:
+      context: .
+      dockerfile: service/Dockerfile.fastapi
+    container_name: jarvis_fastapi_ws
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://jarvis_user:${POSTGRES_PASSWORD:-jarvis_password}@postgres:5432/jarvis
+      QDRANT_URL: http://qdrant:6333
+      AGENT_SERVICE_URL: http://agent_service:8001
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - postgres
+      - qdrant
+      - agent_service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - jarvis_network
+    restart: unless-stopped
+
+  # Voice processing adapter
+  voice_adapter:
+    build:
+      context: .
+      dockerfile: service/Dockerfile.voice
+    container_name: jarvis_voice_adapter
+    environment:
+      STT_PROVIDER: ${STT_PROVIDER:-elevenlabs}
+      TTS_PROVIDER: ${TTS_PROVIDER:-elevenlabs}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
+      WHISPER_MODEL: ${WHISPER_MODEL:-large-v3}
+      COQUI_MODEL: ${COQUI_MODEL:-tts_models/en/ljspeech/tacotron2-DDC}
+      FASTER_WHISPER_BATCH_SIZE: ${FASTER_WHISPER_BATCH_SIZE:-16}
+      FASTER_WHISPER_USE_BATCHED: ${FASTER_WHISPER_USE_BATCHED:-true}
+      FASTER_WHISPER_COMPUTE_TYPE: ${FASTER_WHISPER_COMPUTE_TYPE:-auto}
+      USE_GPU: ${USE_GPU:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8002:8002"
+    volumes:
+      - voice_cache:/app/cache
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+    networks:
+      - jarvis_network
+    restart: unless-stopped
+    # GPU support disabled for WSL compatibility
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: jarvis_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - jarvis_network
+    restart: unless-stopped
+
+  # Nginx reverse proxy (optional for production)
+  nginx:
+    image: nginx:alpine
+    container_name: jarvis_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - fastapi_ws
+    networks:
+      - jarvis_network
+    restart: unless-stopped
+    profiles:
+      - production
+
+volumes:
+  postgres_data:
+    driver: local
+  qdrant_data:
+    driver: local
+  ollama_data:
+    driver: local
+  agent_cache:
+    driver: local
+  voice_cache:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  jarvis_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
