@@ -333,8 +333,15 @@ class JarvisWebSocketHandler:
                 status_response.raise_for_status()
                 status_data = status_response.json()
                 
+                # Handle agents list (current format) or dict (legacy format)
+                agents_data = status_data.get("agents", [])
+                if isinstance(agents_data, list):
+                    agents_active = len(agents_data)  # All agents in list are considered active
+                else:
+                    agents_active = len([a for a in agents_data.values() if a.get("status") == "active"])
+                
                 status_msg = create_system_status_message(
-                    agents_active=len([a for a in status_data.get("agents", {}).values() if a.get("status") == "active"]),
+                    agents_active=agents_active,
                     session_cost=session_state.get("total_cost", 0.0),
                     budget_remaining=100.0 - session_state.get("total_cost", 0.0),
                     voice_processing=session_state.get("voice_enabled", True),

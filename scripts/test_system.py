@@ -59,10 +59,10 @@ class JarvisSystemTester:
         # Test PostgreSQL
         await self.test_endpoint("PostgreSQL Health", "GET", f"{self.base_urls['fastapi']}/health")
         
-        # Test Qdrant
+        # Test Qdrant (uses /healthz endpoint, not /health)
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get("http://localhost:6333/health")
+                response = await client.get("http://localhost:6333/healthz")
                 self.record_result("Qdrant Health", response.status_code == 200, 
                                  f"Status: {response.status_code}")
         except Exception as e:
@@ -105,6 +105,15 @@ class JarvisSystemTester:
                 # Test connection
                 self.record_result("WebSocket Connection", True, "Connected successfully")
                 
+                # Read initial connection status message
+                initial_response = await asyncio.wait_for(websocket.recv(), timeout=5.0)
+                initial_data = json.loads(initial_response)
+                
+                # Verify connection status
+                connection_ok = initial_data.get("type") == "connection_status"
+                self.record_result("WebSocket Connection Status", connection_ok,
+                                 f"Initial message type: {initial_data.get('type')}")
+                
                 # Test heartbeat
                 heartbeat_msg = {
                     "type": "heartbeat",
@@ -112,7 +121,7 @@ class JarvisSystemTester:
                 }
                 await websocket.send(json.dumps(heartbeat_msg))
                 
-                # Wait for response
+                # Wait for heartbeat response
                 response = await asyncio.wait_for(websocket.recv(), timeout=5.0)
                 response_data = json.loads(response)
                 
@@ -194,6 +203,10 @@ class JarvisSystemTester:
         
         try:
             async with websockets.connect(self.websocket_url) as websocket:
+                # Read initial connection status message
+                initial_response = await asyncio.wait_for(websocket.recv(), timeout=5.0)
+                initial_data = json.loads(initial_response)
+                
                 # Test text input through WebSocket
                 text_msg = {
                     "type": "text_input",

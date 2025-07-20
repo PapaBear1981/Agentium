@@ -10,6 +10,7 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -201,25 +202,34 @@ async def get_system_status():
         stt_providers = []
         tts_providers = []
         
+        from models.voice import VoiceProviderStatus
+        
         for provider_key, is_healthy in health_status.items():
             if provider_key.startswith("stt_"):
-                provider_name = provider_key[4:]  # Remove "stt_" prefix
+                provider_enum_str = provider_key[4:]  # Remove "stt_" prefix
+                # Convert "STTProvider.ELEVENLABS" to "elevenlabs"
+                provider_value = provider_enum_str.split('.')[-1].lower()
+                
+                
                 stt_providers.append({
-                    "provider": provider_name,
-                    "available": is_healthy,
-                    "latency_ms": None,  # Could be calculated from metrics
-                    "error_rate": 0.0,  # Could be calculated from metrics
-                    "last_check": time.time(),
-                    "config": {}
-                })
-            elif provider_key.startswith("tts_"):
-                provider_name = provider_key[4:]  # Remove "tts_" prefix
-                tts_providers.append({
-                    "provider": provider_name,
+                    "provider": provider_value,
                     "available": is_healthy,
                     "latency_ms": None,
                     "error_rate": 0.0,
-                    "last_check": time.time(),
+                    "last_check": datetime.utcnow(),
+                    "config": {}
+                })
+            elif provider_key.startswith("tts_"):
+                provider_enum_str = provider_key[4:]  # Remove "tts_" prefix
+                # Convert "TTSProvider.ELEVENLABS" to "elevenlabs"
+                provider_value = provider_enum_str.split('.')[-1].lower()
+                
+                tts_providers.append({
+                    "provider": provider_value,
+                    "available": is_healthy,
+                    "latency_ms": None,
+                    "error_rate": 0.0,
+                    "last_check": datetime.utcnow(),
                     "config": {}
                 })
         
@@ -238,11 +248,17 @@ async def get_system_status():
         
         overall_health = "healthy" if all(health_status.values()) else "degraded"
         
+        from models.voice import VoiceProviderStatus
+        
+        # Convert dicts back to VoiceProviderStatus objects for proper validation
+        stt_provider_objects = [VoiceProviderStatus(**provider) for provider in stt_providers]
+        tts_provider_objects = [VoiceProviderStatus(**provider) for provider in tts_providers]
+        
         return VoiceSystemStatus(
-            stt_providers=stt_providers,
-            tts_providers=tts_providers,
-            active_sessions=0,  # Would track active WebSocket sessions
-            processing_queue_size=0,  # Would track queued requests
+            stt_providers=stt_provider_objects,
+            tts_providers=tts_provider_objects,
+            active_sessions=0,
+            processing_queue_size=0,
             system_health=overall_health,
             uptime_seconds=int(time.time() - startup_time),
             metrics=total_metrics

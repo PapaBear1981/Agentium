@@ -227,6 +227,17 @@ async def list_agents():
     """List available agents."""
     return {"agents": list(orchestrator.agents.keys())}
 
+@app.get("/tools")
+async def list_tools():
+    """List available tools."""
+    # For the simple implementation, return an empty tools list
+    # In the future, this could integrate with MCP tools
+    return {
+        "tools": [],
+        "total_tools": 0,
+        "note": "Tools functionality not implemented in simple agent service"
+    }
+
 @app.get("/status")
 async def get_status():
     """Get detailed system status."""
