@@ -1,8 +1,8 @@
 # 🤖 Agentium - Multi-Agent AI System
 
-**A sophisticated, voice-enabled multi-agent AI system with real-time communication and dynamic tool management.**
+**A sophisticated, voice-enabled multi-agent AI system with real-time communication, beautiful Vue 3 frontend, and dynamic tool management.**
 
-> **Status**: Core functionality operational (70% test success rate) - Ready for development and enhancement
+> **Status**: Backend operational (70% test success rate) + Frontend MVP complete - Ready for integration and enhancement
 
 ## 🌟 Features
 
@@ -23,6 +23,13 @@
 - **Voice Streaming**: Live audio input/output  
 - **Session Management**: Multi-user session handling
 - **RESTful APIs**: Standard HTTP endpoints for integration
+
+### 🎨 Modern Frontend
+- **Vue 3 + TypeScript**: Modern reactive frontend with full type safety
+- **ShadCN/vue + Tailwind**: Beautiful, accessible UI components
+- **Real-time WebSocket**: Live chat with voice integration
+- **Responsive Design**: Mobile-first, dark theme by default
+- **Voice Interface**: Click-to-talk with waveform visualization
 
 ### 🔍 Infrastructure Ready
 - **PostgreSQL**: Database with pgvector extension for embeddings
@@ -83,8 +90,9 @@ python scripts/test_system.py
 ## 📡 API Endpoints
 
 ### Core Services
-- **FastAPI Frontend**: `http://localhost:8000` - WebSocket and HTTP API
-- **Agent Service**: `http://localhost:8001` - AI task processing  
+- **Vue 3 Frontend**: `http://localhost:5173` - Modern web interface (development)
+- **FastAPI Backend**: `http://localhost:8000` - WebSocket and HTTP API
+- **Agent Service**: `http://localhost:8001` - AI task processing
 - **Voice Service**: `http://localhost:8002` - STT/TTS processing
 
 ### Health Checks
@@ -120,21 +128,21 @@ curl -X POST http://localhost:8002/tts \
 ## 🏗️ Architecture
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Frontend      │    │   Voice         │    │   Agent         │
-│   (WebSocket)   │◄──►│   Service       │◄──►│   Service       │
-│   Port: 8000    │    │   Port: 8002    │    │   Port: 8001    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         └───────────────────────┼───────────────────────┘
-                                 │
-         ┌───────────────────────┼───────────────────────┐
-         │                       │                       │
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   PostgreSQL    │    │     Qdrant      │    │     Ollama      │
-│   (Database)    │    │   (Vectors)     │    │   (Local LLM)   │
-│   Port: 5432    │    │   Port: 6333    │    │   Port: 11434   │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Vue 3         │    │   FastAPI       │    │   Voice         │    │   Agent         │
+│   Frontend      │◄──►│   Backend       │◄──►│   Service       │◄──►│   Service       │
+│   Port: 5173    │    │   Port: 8000    │    │   Port: 8002    │    │   Port: 8001    │
+└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
+                                │                       │                       │
+                                └───────────────────────┼───────────────────────┘
+                                                        │
+                        ┌───────────────────────────────┼───────────────────────────────┐
+                        │                               │                               │
+               ┌─────────────────┐            ┌─────────────────┐            ┌─────────────────┐
+               │   PostgreSQL    │            │     Qdrant      │            │     Ollama      │
+               │   (Database)    │            │   (Vectors)     │            │   (Local LLM)   │
+               │   Port: 5432    │            │   Port: 6333    │            │   Port: 11434   │
+               └─────────────────┘            └─────────────────┘            └─────────────────┘
 ```
 
 ## 💬 Usage Examples
@@ -185,20 +193,30 @@ print(f"Agent: {result['content']}")
 ### Project Structure
 ```
 Agentium/
-├── service/                 # Core services
-│   ├── models/             # Pydantic models
+├── frontend/               # Vue 3 Frontend Application
+│   ├── src/
+│   │   ├── components/    # Vue components (UI, Chat, Layout)
+│   │   ├── composables/   # Vue composables (WebSocket, Voice, etc.)
+│   │   ├── stores/        # Pinia state management
+│   │   ├── types/         # TypeScript type definitions
+│   │   └── lib/           # Utility functions
+│   ├── Dockerfile         # Multi-stage Docker build
+│   ├── docker-compose.yml # Frontend service configuration
+│   └── todolist.md        # Frontend development roadmap
+├── service/               # Backend Services
+│   ├── models/           # Pydantic models
 │   ├── simple_agent_service.py  # Current working agent implementation
-│   ├── agent.py            # Original AutoGen implementation (needs fixes)
-│   ├── voice.py            # Voice processing
-│   ├── frontend.py         # WebSocket API
-│   └── requirements-*.txt  # Service dependencies
-├── scripts/                # Utility scripts
-│   ├── test_system.py     # Comprehensive tests
-│   └── simple_test.py     # Basic functionality tests
-├── data/docs/             # RAG documents (when enabled)
-├── logs/                  # Application logs
-├── docker-compose.yml     # Service orchestration
-└── CLAUDE.md             # Developer guidance
+│   ├── agent.py          # Original AutoGen implementation (needs fixes)
+│   ├── voice.py          # Voice processing
+│   ├── frontend.py       # WebSocket API
+│   └── requirements-*.txt # Service dependencies
+├── scripts/              # Utility scripts
+│   ├── test_system.py   # Comprehensive tests
+│   └── simple_test.py   # Basic functionality tests
+├── data/docs/           # RAG documents (when enabled)
+├── logs/                # Application logs
+├── docker-compose.yml   # Service orchestration
+└── CLAUDE.md           # Developer guidance
 ```
 
 ### Running Tests
@@ -212,27 +230,40 @@ python scripts/test_system.py
 ```
 
 ### Development Workflow
+
+#### Backend Development
 1. **Start Services**: `docker-compose up -d`
 2. **View Logs**: `docker-compose logs -f [service_name]`
 3. **Make Changes**: Edit code in `service/` directory
 4. **Rebuild**: `docker-compose build [service_name]`
 5. **Test**: `python scripts/test_system.py`
 
+#### Frontend Development
+1. **Navigate to Frontend**: `cd frontend`
+2. **Install Dependencies**: `npm install`
+3. **Start Dev Server**: `npm run dev`
+4. **Open Browser**: `http://localhost:5173`
+5. **Build for Production**: `npm run build`
+
 ## 🎯 Current Status
 
 ### ✅ Working Features
+- **Vue 3 Frontend**: Beautiful, responsive web interface with voice controls
 - **Multi-Agent Processing**: GPT-4o and Gemini via OpenRouter
-- **Voice I/O**: ElevenLabs STT/TTS integration
-- **Real-time Communication**: WebSocket server
+- **Voice I/O**: ElevenLabs STT/TTS integration with waveform visualization
+- **Real-time Communication**: WebSocket server with auto-reconnection
 - **Database**: PostgreSQL with pgvector
 - **Vector Search**: Qdrant operational
 - **Local LLM**: Ollama with Llama models
+- **Modern UI**: ShadCN/vue components with dark theme
 
 ### 🔄 In Development
+- **Backend Integration**: Connect frontend to live services
+- **File Upload System**: Drag-and-drop file handling
+- **Tool Integration**: Calculator, calendar, charts
 - **RAG System**: Document processing and retrieval (dependencies disabled)
 - **AutoGen Integration**: Complex multi-agent orchestration (type issues)
 - **MCP Tools**: Dynamic tool management
-- **Frontend UI**: Web interface for interactions
 
 ### 📊 Test Results
 ```
@@ -299,10 +330,11 @@ docker-compose logs voice_adapter
 ## 🛣️ Roadmap
 
 ### Next Sprint
-1. **Fix AutoGen Integration** - Resolve type annotation issues
-2. **Re-enable RAG** - Add sentence-transformers back  
-3. **Complete WebSocket Handlers** - Full message type support
-4. **Add Frontend UI** - Web interface for interactions
+1. **Frontend-Backend Integration** - Connect Vue frontend to live services
+2. **File Upload System** - Implement drag-and-drop file handling
+3. **Tool Integration** - Add calculator, calendar, and chart components
+4. **Fix AutoGen Integration** - Resolve type annotation issues
+5. **Re-enable RAG** - Add sentence-transformers back
 
 ### Future Enhancements
 - **GPU Acceleration** - Enable CUDA support for local models
